@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat:*)",
+      "Read(//c/Users/shane/Downloads/**)",
+      "Bash(mkdir:*)",
+      "Bash(npm init:*)",
+      "Bash(dir:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"Initial project structure\n\n$(cat <<''EOF''\n- Created project directory structure\n- Added comprehensive documentation\n- Set up multi-agent orchestration framework\n- Initialized package.json\n- Ready to begin development\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
