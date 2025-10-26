@@ -10,6 +10,11 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const API_URL = process.env.VITE_API_URL || 'http://localhost:3001';
 
+// Health check endpoint for Railway
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
 // Proxy API requests to backend
 app.use('/api', createProxyMiddleware({
   target: API_URL,
@@ -31,14 +36,28 @@ app.use('/uploads', createProxyMiddleware({
 }));
 
 // Serve static files from the dist directory
-app.use(express.static(path.join(__dirname, 'dist')));
+const distPath = path.join(__dirname, 'dist');
+console.log(`Serving static files from: ${distPath}`);
+app.use(express.static(distPath));
 
 // Handle client-side routing - return index.html for all routes
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+  const indexPath = path.join(__dirname, 'dist', 'index.html');
+  console.log(`Serving index.html from: ${indexPath}`);
+  res.sendFile(indexPath, (err) => {
+    if (err) {
+      console.error('Error sending index.html:', err);
+      res.status(500).send('Error loading application');
+    }
+  });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server is running on port ${PORT}`);
-  console.log(`Proxying API requests to: ${API_URL}`);
+app.listen(PORT, '0.0.0.0', (err) => {
+  if (err) {
+    console.error('Failed to start server:', err);
+    process.exit(1);
+  }
+  console.log(`✓ Server is running on port ${PORT}`);
+  console.log(`✓ Proxying API requests to: ${API_URL}`);
+  console.log(`✓ Serving static files from: ${distPath}`);
 });
