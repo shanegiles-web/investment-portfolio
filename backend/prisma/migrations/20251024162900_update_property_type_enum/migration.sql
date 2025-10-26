@@ -1,0 +1,9 @@
+-- AlterEnum
+-- Update PropertyType enum to match frontend values
+ALTER TYPE "PropertyType" RENAME VALUE 'RESIDENTIAL' TO 'SINGLE_FAMILY';
+ALTER TYPE "PropertyType" RENAME VALUE 'MIXED_USE' TO 'CONDO';
+
+-- Add new enum values
+ALTER TYPE "PropertyType" ADD VALUE IF NOT EXISTS 'TOWNHOUSE';
+ALTER TYPE "PropertyType" ADD VALUE IF NOT EXISTS 'APARTMENT_COMPLEX';
+ALTER TYPE "PropertyType" ADD VALUE IF NOT EXISTS 'MOBILE_HOME';

@@ -1,0 +1,711 @@
+// Investment Portfolio Database Schema
+// Generated for PostgreSQL with Prisma ORM
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// CORE TABLES
+// ============================================================================
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  passwordHash  String   @map("password_hash")
+  firstName     String   @map("first_name")
+  lastName      String   @map("last_name")
+  role          UserRole @default(OWNER)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  accounts            Account[]
+  properties          Property[]
+  entities            Entity[]
+  budgets             Budget[]
+  rebalancingTargets  RebalancingTarget[]
+  documents           Document[]
+  auditLogs           AuditLog[]
+  investmentTypes     InvestmentType[]
+  feedback            Feedback[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  OWNER
+  VIEW_ONLY
+  GUEST
+}
+
+model Account {
+  id            String      @id @default(uuid())
+  userId        String      @map("user_id")
+  accountType   String      @map("account_type")
+  accountName   String      @map("account_name")
+  institution   String?
+  accountNumber String?     @map("account_number")
+  taxTreatment  TaxTreatment @map("tax_treatment")
+  owner         String?
+  beneficiaries Json?
+  isActive      Boolean     @default(true) @map("is_active")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  // Relations
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  positions    Position[]
+  transactions Transaction[]
+  properties   Property[]
+
+  @@index([userId])
+  @@map("accounts")
+}
+
+enum TaxTreatment {
+  TAXABLE
+  TAX_DEFERRED
+  TAX_EXEMPT
+}
+
+model InvestmentType {
+  id               String   @id @default(uuid())
+  name             String
+  category         InvestmentCategory
+  isCustom         Boolean  @default(false) @map("is_custom")
+  customFields     Json?    @map("custom_fields")
+  calculationRules Json?    @map("calculation_rules")
+  createdBy        String?  @map("created_by")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  creator   User?      @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  positions Position[]
+
+  @@index([category])
+  @@map("investment_types")
+}
+
+enum InvestmentCategory {
+  EQUITY
+  FIXED_INCOME
+  REAL_ESTATE
+  ALTERNATIVE
+  BUSINESS
+  CASH
+  COMMODITY
+  CRYPTOCURRENCY
+}
+
+model Position {
+  id                  String   @id @default(uuid())
+  accountId           String   @map("account_id")
+  investmentTypeId    String   @map("investment_type_id")
+  symbol              String?
+  name                String
+  shares              Float    @default(0) // or units
+  costBasisTotal      Float    @default(0) @map("cost_basis_total")
+  costBasisPerShare   Float    @default(0) @map("cost_basis_per_share")
+  currentPrice        Float    @default(0) @map("current_price")
+  currentValue        Float    @default(0) @map("current_value")
+  unrealizedGainLoss  Float    @default(0) @map("unrealized_gain_loss")
+  lastUpdated         DateTime @default(now()) @map("last_updated")
+  metadata            Json?
+
+  // Relations
+  account      Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  investmentType InvestmentType @relation(fields: [investmentTypeId], references: [id])
+  transactions Transaction[]
+  taxLots      TaxLot[]
+
+  @@index([accountId])
+  @@index([symbol])
+  @@map("positions")
+}
+
+model Transaction {
+  id              String          @id @default(uuid())
+  accountId       String          @map("account_id")
+  positionId      String?         @map("position_id")
+  transactionType TransactionType @map("transaction_type")
+  transactionDate DateTime        @map("transaction_date")
+  settlementDate  DateTime?       @map("settlement_date")
+  shares          Float?          // or units
+  pricePerShare   Float?          @map("price_per_share")
+  totalAmount     Float           @map("total_amount")
+  fees            Float           @default(0)
+  taxLotId        String?         @map("tax_lot_id")
+  description     String?
+  isReconciled    Boolean         @default(false) @map("is_reconciled")
+  importedFrom    String?         @map("imported_from")
+  metadata        Json?
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+
+  // Relations
+  account  Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  position Position? @relation(fields: [positionId], references: [id], onDelete: SetNull)
+  taxLot   TaxLot?   @relation(fields: [taxLotId], references: [id], onDelete: SetNull)
+
+  @@index([accountId])
+  @@index([positionId])
+  @@index([transactionDate])
+  @@map("transactions")
+}
+
+enum TransactionType {
+  BUY
+  SELL
+  DIVIDEND
+  DISTRIBUTION
+  REINVESTMENT
+  TRANSFER
+  CORPORATE_ACTION
+  CONTRIBUTION
+  WITHDRAWAL
+  EXPENSE
+  INCOME
+}
+
+model TaxLot {
+  id                String         @id @default(uuid())
+  positionId        String         @map("position_id")
+  acquisitionDate   DateTime       @map("acquisition_date")
+  shares            Float
+  costBasis         Float          @map("cost_basis")
+  dispositionDate   DateTime?      @map("disposition_date")
+  holdingPeriodType HoldingPeriod? @map("holding_period_type")
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
+
+  // Relations
+  position     Position      @relation(fields: [positionId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@index([positionId])
+  @@map("tax_lots")
+}
+
+enum HoldingPeriod {
+  SHORT_TERM
+  LONG_TERM
+}
+
+model Price {
+  id            String   @id @default(uuid())
+  symbol        String
+  date          DateTime
+  open          Float?
+  high          Float?
+  low           Float?
+  close         Float
+  volume        BigInt?
+  adjustedClose Float?   @map("adjusted_close")
+  source        String?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@unique([symbol, date])
+  @@index([symbol])
+  @@index([date])
+  @@map("prices")
+}
+
+// ============================================================================
+// REAL ESTATE TABLES
+// ============================================================================
+
+model Property {
+  id            String       @id @default(uuid())
+  userId        String       @map("user_id")
+  accountId     String?      @map("account_id")
+  entityId      String?      @map("entity_id")
+  propertyType  PropertyType @map("property_type")
+  address       String
+  city          String
+  state         String
+  zip           String
+  purchaseDate  DateTime     @map("purchase_date")
+  purchasePrice Float        @map("purchase_price")
+  currentValue  Float        @map("current_value")
+  loanBalance   Float        @default(0) @map("loan_balance")
+
+  // Financial details
+  refurbishCosts              Float?  @default(0) @map("refurbish_costs")
+  furnishCosts                Float?  @default(0) @map("furnish_costs")
+  acquisitionCosts            Float?  @default(0) @map("acquisition_costs")
+  downPayment                 Float?  @map("down_payment")
+  loanAmount                  Float?  @default(0) @map("loan_amount")
+  loanInterestRate            Float?  @map("loan_interest_rate")
+  loanTermYears               Int?    @map("loan_term_years")
+  monthlyMortgagePayment      Float?  @default(0) @map("monthly_mortgage_payment")
+  propertyManagementFeePercent Float? @default(0) @map("property_management_fee_percent")
+  vacancyRatePercent          Float?  @default(0) @map("vacancy_rate_percent")
+  desiredCapRate              Float?  @map("desired_cap_rate")
+
+  // Property images
+  primaryImageUrl  String? @map("primary_image_url")
+  imageUrls        Json?   @map("image_urls")
+
+  // Physical details
+  bedrooms      Int?
+  bathrooms     Float?
+  squareFeet    Float?       @map("square_feet")
+  lotSize       Float?       @map("lot_size")
+  numberOfUnits Int?         @default(1) @map("number_of_units")
+
+  metadata      Json?
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  // Relations
+  user                 User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account              Account?                    @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  entity               Entity?                     @relation(fields: [entityId], references: [id], onDelete: SetNull)
+  leases               Lease[]
+  propertyTransactions PropertyTransaction[]
+  expenseTemplate      PropertyExpenseTemplate?
+  additionalIncome     PropertyIncome[]
+  tenants              Tenant[]
+  maintenanceRequests  MaintenanceRequest[]
+  propertyDocuments    PropertyDocument[]
+
+  @@index([userId])
+  @@index([accountId])
+  @@index([entityId])
+  @@map("properties")
+}
+
+enum PropertyType {
+  SINGLE_FAMILY
+  MULTI_FAMILY
+  CONDO
+  TOWNHOUSE
+  APARTMENT_COMPLEX
+  COMMERCIAL
+  LAND
+  MOBILE_HOME
+}
+
+model Lease {
+  id                 String      @id @default(uuid())
+  propertyId         String      @map("property_id")
+  tenantId           String?     @map("tenant_id")
+  tenantName         String      @map("tenant_name")
+  tenantContact      String?     @map("tenant_contact")
+  startDate          DateTime    @map("start_date")
+  endDate            DateTime    @map("end_date")
+  monthlyRent        Float       @map("monthly_rent")
+  securityDeposit    Float       @default(0) @map("security_deposit")
+  depositHeld        Float       @default(0) @map("deposit_held")
+  leaseTermMonths    Int?        @map("lease_term_months")
+  renewalOption      Boolean     @default(false) @map("renewal_option")
+  autoRenewal        Boolean     @default(false) @map("auto_renewal")
+  status             LeaseStatus @default(ACTIVE)
+  isActive           Boolean     @default(true) @map("is_active")
+  leaseDocumentUrl   String?     @map("lease_document_url")
+  notes              String?
+  createdAt          DateTime    @default(now()) @map("created_at")
+  updatedAt          DateTime    @updatedAt @map("updated_at")
+
+  // Relations
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  tenant   Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+
+  @@index([propertyId])
+  @@index([tenantId])
+  @@index([endDate])
+  @@index([status])
+  @@map("leases")
+}
+
+enum LeaseStatus {
+  ACTIVE
+  EXPIRED
+  TERMINATED
+  PENDING
+}
+
+model PropertyTransaction {
+  id              String   @id @default(uuid())
+  propertyId      String   @map("property_id")
+  transactionDate DateTime @map("transaction_date")
+  category        String
+  subcategory     String?
+  amount          Float
+  description     String?
+  vendor          String?
+  receiptUrl      String?  @map("receipt_url")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  // Relations
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId])
+  @@index([transactionDate])
+  @@map("property_transactions")
+}
+
+model PropertyExpenseTemplate {
+  id                     String   @id @default(uuid())
+  propertyId             String   @unique @map("property_id")
+
+  // Management & Professional Services
+  propertyManagementFee  Float?   @default(0) @map("property_management_fee")
+  accountingLegalFees    Float?   @default(0) @map("accounting_legal_fees")
+
+  // Property Maintenance
+  repairsMaintenance     Float?   @default(0) @map("repairs_maintenance")
+  pestControl            Float?   @default(0) @map("pest_control")
+
+  // Taxes & Insurance
+  realEstateTaxes        Float?   @default(0) @map("real_estate_taxes")
+  propertyInsurance      Float?   @default(0) @map("property_insurance")
+  hoaFees                Float?   @default(0) @map("hoa_fees")
+
+  // Utilities (if landlord pays)
+  waterSewer             Float?   @default(0) @map("water_sewer")
+  gasElectricity         Float?   @default(0) @map("gas_electricity")
+  garbage                Float?   @default(0) @map("garbage")
+  cablePhoneInternet     Float?   @default(0) @map("cable_phone_internet")
+
+  // Marketing
+  advertising            Float?   @default(0)
+
+  // Other
+  otherExpenses          Json?    @map("other_expenses")
+
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@map("property_expense_templates")
+}
+
+model PropertyIncome {
+  id           String              @id @default(uuid())
+  propertyId   String              @map("property_id")
+  incomeType   PropertyIncomeType  @map("income_type")
+  amount       Float
+  frequency    IncomeFrequency     @default(MONTHLY)
+  description  String?
+  isActive     Boolean             @default(true) @map("is_active")
+  createdAt    DateTime            @default(now()) @map("created_at")
+  updatedAt    DateTime            @updatedAt @map("updated_at")
+
+  // Relations
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId])
+  @@map("property_income")
+}
+
+enum PropertyIncomeType {
+  RENT
+  LAUNDRY
+  VENDING
+  PARKING
+  PET_FEE
+  LATE_FEE
+  APPLICATION_FEE
+  OTHER
+}
+
+enum IncomeFrequency {
+  MONTHLY
+  QUARTERLY
+  ANNUALLY
+  ONE_TIME
+}
+
+// ============================================================================
+// TENANT & MAINTENANCE TABLES
+// ============================================================================
+
+model Tenant {
+  id               String    @id @default(uuid())
+  propertyId       String    @map("property_id")
+  firstName        String    @map("first_name")
+  lastName         String    @map("last_name")
+  email            String?
+  phone            String?
+  emergencyContact String?   @map("emergency_contact")
+  emergencyPhone   String?   @map("emergency_phone")
+  moveInDate       DateTime  @map("move_in_date")
+  moveOutDate      DateTime? @map("move_out_date")
+  isActive         Boolean   @default(true) @map("is_active")
+  notes            String?
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  leases   Lease[]
+
+  @@index([propertyId])
+  @@index([isActive])
+  @@map("tenants")
+}
+
+model MaintenanceRequest {
+  id              String              @id @default(uuid())
+  propertyId      String              @map("property_id")
+  title           String
+  description     String
+  category        MaintenanceCategory
+  priority        MaintenancePriority @default(MEDIUM)
+  status          MaintenanceStatus   @default(PENDING)
+  reportedDate    DateTime            @default(now()) @map("reported_date")
+  scheduledDate   DateTime?           @map("scheduled_date")
+  completedDate   DateTime?           @map("completed_date")
+  assignedTo      String?             @map("assigned_to")
+  estimatedCost   Float?              @map("estimated_cost")
+  actualCost      Float?              @map("actual_cost")
+  images          Json?
+  notes           String?
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+
+  // Relations
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId])
+  @@index([status])
+  @@index([priority])
+  @@index([scheduledDate])
+  @@map("maintenance_requests")
+}
+
+enum MaintenanceCategory {
+  PLUMBING
+  ELECTRICAL
+  HVAC
+  APPLIANCE
+  STRUCTURAL
+  LANDSCAPING
+  PEST_CONTROL
+  CLEANING
+  SECURITY
+  OTHER
+}
+
+enum MaintenancePriority {
+  LOW
+  MEDIUM
+  HIGH
+  EMERGENCY
+}
+
+enum MaintenanceStatus {
+  PENDING
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model PropertyDocument {
+  id              String              @id @default(uuid())
+  propertyId      String              @map("property_id")
+  documentType    PropertyDocumentType @map("document_type")
+  title           String
+  description     String?
+  fileUrl         String              @map("file_url")
+  fileName        String              @map("file_name")
+  fileSize        BigInt              @map("file_size")
+  mimeType        String              @map("mime_type")
+  uploadedBy      String?             @map("uploaded_by")
+  tags            Json?
+  expiryDate      DateTime?           @map("expiry_date")
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+
+  // Relations
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId])
+  @@index([documentType])
+  @@index([expiryDate])
+  @@map("property_documents")
+}
+
+enum PropertyDocumentType {
+  DEED
+  TITLE
+  MORTGAGE
+  INSURANCE
+  TAX_RECORD
+  INSPECTION_REPORT
+  APPRAISAL
+  LEASE_AGREEMENT
+  REPAIR_RECEIPT
+  UTILITY_BILL
+  HOA_DOCUMENT
+  WARRANTY
+  PERMIT
+  OTHER
+}
+
+// ============================================================================
+// BUSINESS & FARM TABLES
+// ============================================================================
+
+model Entity {
+  id                 String     @id @default(uuid())
+  userId             String     @map("user_id")
+  entityType         EntityType @map("entity_type")
+  entityName         String     @map("entity_name")
+  ein                String?
+  formationDate      DateTime   @map("formation_date")
+  ownershipPercent   Float      @map("ownership_percentage")
+  createdAt          DateTime   @default(now()) @map("created_at")
+  updatedAt          DateTime   @updatedAt @map("updated_at")
+
+  // Relations
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  properties     Property[]
+  farmOperations FarmOperation[]
+
+  @@index([userId])
+  @@map("entities")
+}
+
+enum EntityType {
+  LLC
+  PARTNERSHIP
+  S_CORP
+  C_CORP
+  SOLE_PROPRIETOR
+}
+
+model FarmOperation {
+  id            String   @id @default(uuid())
+  entityId      String   @map("entity_id")
+  farmName      String   @map("farm_name")
+  acreage       Float?
+  cropType      String?  @map("crop_type")
+  livestockType String?  @map("livestock_type")
+  seriesName    String?  @map("series_name")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  entity Entity @relation(fields: [entityId], references: [id], onDelete: Cascade)
+
+  @@index([entityId])
+  @@map("farm_operations")
+}
+
+// ============================================================================
+// BUDGET & PLANNING TABLES
+// ============================================================================
+
+model Budget {
+  id             String   @id @default(uuid())
+  userId         String   @map("user_id")
+  year           Int
+  month          Int
+  category       String
+  subcategory    String?
+  budgetedAmount Float    @map("budgeted_amount")
+  actualAmount   Float    @default(0) @map("actual_amount")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, year, month, category, subcategory])
+  @@index([userId])
+  @@map("budgets")
+}
+
+model RebalancingTarget {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  assetClass      String   @map("asset_class")
+  targetPercent   Float    @map("target_percentage")
+  minPercent      Float?   @map("min_percentage")
+  maxPercent      Float?   @map("max_percentage")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, assetClass])
+  @@index([userId])
+  @@map("rebalancing_targets")
+}
+
+// ============================================================================
+// SYSTEM TABLES
+// ============================================================================
+
+model Document {
+  id                String   @id @default(uuid())
+  userId            String   @map("user_id")
+  relatedEntityType String   @map("related_entity_type")
+  relatedEntityId   String   @map("related_entity_id")
+  documentType      String   @map("document_type")
+  fileName          String   @map("file_name")
+  fileUrl           String   @map("file_url")
+  fileSize          BigInt   @map("file_size")
+  mimeType          String   @map("mime_type")
+  uploadDate        DateTime @default(now()) @map("upload_date")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([relatedEntityType, relatedEntityId])
+  @@map("documents")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  actionType String   @map("action_type")
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
+  oldValue   Json?    @map("old_value")
+  newValue   Json?    @map("new_value")
+  timestamp  DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([timestamp])
+  @@index([entityType, entityId])
+  @@map("audit_log")
+}
+
+model Feedback {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  page        String   // Page/section where feedback was submitted
+  category    String   @default("General") // Feature Request, Bug, Improvement, General
+  comment     String   @db.Text
+  status      String   @default("New") // New, Reviewed, In Progress, Completed, Rejected
+  priority    String   @default("Medium") // Low, Medium, High
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("feedback")
+}
